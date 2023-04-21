@@ -340,7 +340,8 @@ If you can remeber all the pair, you will win the bonus points.
                     exp_win,
                     choices=list(range(int(trial['target_score']) + 1)),
                     noMouse=True, precision=1,
-                    leftKeys='l', rightKeys='r',
+                    leftKeys=self.confidence_keys['left'],
+                    rightKeys=self.confidence_keys['right'],
                     acceptKeys=self.confidence_keys['yes'],
                     maxTime=0,
                 )
