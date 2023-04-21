@@ -17,13 +17,14 @@ def get_tasks(parsed):
             f"sub-{parsed.subject}_task-numberpair_run-{run + 1}_events.tsv",
         )
         tasks.append(memory.NumberPair(name="task-numberpair_run-{run + 1}",
-                                       items_list=session_design_filename))
+                                       items_list=session_design_filename,
+                                       total_possible_points=0))
     return tasks
 
 # Task Parameters
 # fMRI: runs of 10 minutes - 2 run max
 # 10 minutes = 6 ~ 10 memory grids, 2 levels of
-NUMBER_PAIRS_DATA_PATH = os.path.join("data", "memory", "number_pairs")
+NUMBER_PAIRS_DATA_PATH = os.path.join("data", "memory", "numberpairs")
 DIFFICULTY_SCALE = {  # The homogenous grid difficulty per target score level
     3: 0,
     4: 0,

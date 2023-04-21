@@ -86,8 +86,9 @@ You will be asked to recall them seqentially, and win one point per correct pair
 If you can remeber all the pair, you will win the bonus points.
 """
 
-    def __init__(self, items_list, *args, **kwargs):
+    def __init__(self, items_list, total_possible_points, *args, **kwargs):
         super().__init__(**kwargs)
+        self.total_possible_points = 0
         self.item_list = data.importConditions(items_list)
         self.duration = len(self.item_list)  # not sure if this is needed
         self._progress_bar_refresh_rate = 2
@@ -428,9 +429,10 @@ If you can remeber all the pair, you will win the bonus points.
             yield True
         # final results screen
         # update text
+
         self.question.text = (
             f"In this session, "
-            f"you earned {total_bonus} out of {total_possible_points} pionts.")
+            f"you earned {total_bonus} out of {self.total_possible_points} pionts.")
         for _ in range(config.FRAME_RATE * 5):
             self.question.draw(exp_win)
             if ctl_win:
