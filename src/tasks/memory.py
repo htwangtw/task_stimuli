@@ -80,9 +80,9 @@ Try to remember the items and their location on the screen."""
 
 class NumberPair(Task):
 
-    DEFAULT_INSTRUCTION = """You will be presented a 6 x 4 grid on the screen.
-Remember the numer pairs on screen.
-You will be asked to recall them seqentially.
+    DEFAULT_INSTRUCTION = """You will be presented a 6 x 4 grid mixed with numbers and alphabets on the screen.
+Remember the locations of the numer pairs on screen.
+You will be asked to recall them seqentially, and win one point per correct pair.
 If you can remeber all the pair, you will win the bonus points.
 """
 
@@ -112,8 +112,8 @@ If you can remeber all the pair, you will win the bonus points.
             color="white",
             wrapWidth=config.WRAP_WIDTH,
         )
-
-        for _ in range(config.FRAME_RATE * config.INSTRUCTION_DURATION):
+        instruction_duration = 10
+        for _ in range(config.FRAME_RATE * instruction_duration):
             screen_text.draw(exp_win)
             if ctl_win:
                 screen_text.draw(ctl_win)
@@ -164,6 +164,7 @@ If you can remeber all the pair, you will win the bonus points.
             maxTime=0,
         )
         self.recall_time.styleTweaks = ['triangleMarker']
+        self.recall_time.keyClick = "Press left or right"
 
         self.effort = visual.RatingScale(
             exp_win, low=0, high=100, precision=1,
@@ -174,13 +175,15 @@ If you can remeber all the pair, you will win the bonus points.
             acceptKeys=self.confidence_keys['yes'],
             maxTime=0,
         )
-        self.recall_time.styleTweaks = ['triangleMarker']
+        self.effort.styleTweaks = ['triangleMarker']
+        self.effort.keyClick = "Press left or right"
 
         self._progress_bar_refresh_rate = 2 # 1 flip / trial
         self.pyglet_keyboard = key.KeyStateHandler()
 
     def _run(self, exp_win, ctl_win):
         # start the trials
+        total_bonus = 0
         for trial in self.trials:
             # flush keys
             last_selected_location = None
@@ -314,7 +317,7 @@ If you can remeber all the pair, you will win the bonus points.
                             collect_response = True
                     # detect key press for metacognition answer
                     first_response = confidence_answer_keys[0]
-                    recall_correct = int(trial['recall_answer'] == selected_location)
+                    recall_correct = int(int(trial['recall_answer']) == int(selected_location))
                     confidence_rating = [k for k, v in self.confidence_keys.items() if v == first_response[0]][0]
                     n_correct += recall_correct
                     self.trials.addData("selected_location", selected_location)
@@ -340,11 +343,12 @@ If you can remeber all the pair, you will win the bonus points.
                     exp_win,
                     choices=list(range(int(trial['target_score']) + 1)),
                     noMouse=True, precision=1,
-                    leftKeys=self.confidence_keys['left'],
-                    rightKeys=self.confidence_keys['right'],
+                    leftKeys=self.direction_keys['left'],
+                    rightKeys=self.direction_keys['right'],
                     acceptKeys=self.confidence_keys['yes'],
                     maxTime=0,
                 )
+                self.estimate_success.keyClick = "Press left or right"
                 self.estimate_success.styleTweaks = ['triangleMarker']
                 self.question.text = f"Out of {trial['target_score']} number pairs, how many did you get right?"
                 pos = int(trial['target_score'])
@@ -367,11 +371,13 @@ If you can remeber all the pair, you will win the bonus points.
 
             elif trial['event_type'] == "feedback":
                 # update text
-                bonus_point = 0 if n_correct != trial["target_score"] else trial["reward_level"]
+                bonus_point = 0 if n_correct != int(trial["target_score"]) else int(trial["reward_level"])
+                total_bonus += bonus_point + n_correct
                 self.question.text = (
                     f"Out of {trial['target_score']} number pairs, "
                     f"you got {n_correct} correctly.\n"
-                    f"You get {bonus_point} bonus pionts.")
+                    f"You got {bonus_point} bonus pionts."
+                    f"You received {n_correct + bonus_point} points from this trial.")
                 self.question.draw(exp_win)
                 if ctl_win:
                     self.question.draw(exp_win)
@@ -381,6 +387,7 @@ If you can remeber all the pair, you will win the bonus points.
 
             elif trial['event_type'] in ["effort"]:
                 # update text
+                self.effort.reset()
                 self.question.text = f"How much effor did you put in the task?"
                 pos = random.randrange(0, 100)
                 self.effort.markerStart = pos
@@ -418,6 +425,16 @@ If you can remeber all the pair, you will win the bonus points.
             else:
                 pass
             self.progress_bar.set_description(description)
+            yield True
+        # final results screen
+        # update text
+        self.question.text = (
+            f"In this session, "
+            f"you earned {total_bonus} out of {total_possible_points} pionts.")
+        for _ in range(config.FRAME_RATE * 5):
+            self.question.draw(exp_win)
+            if ctl_win:
+                self.question.draw(exp_win)
             yield True
 
     def _update_rating_scale(self, pos, min, max):

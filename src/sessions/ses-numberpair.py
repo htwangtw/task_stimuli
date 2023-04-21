@@ -9,14 +9,15 @@ from scipy.ndimage import label, generate_binary_structure
 
 def get_tasks(parsed):
     from ..tasks import memory
-
-    session_design_filename = os.path.join(
-        NUMBER_PAIRS_DATA_PATH,
-        "designs",
-        f"sub-{parsed.subject}_event.tsv",
-    )
-    tasks = [memory.NumberPair(name="numberpairs",
-                               items_list=session_design_filename)]
+    tasks = []
+    for run in range(20):
+        session_design_filename = os.path.join(
+            NUMBER_PAIRS_DATA_PATH,
+            "designs",
+            f"sub-{parsed.subject}_task-numberpair_run-{run + 1}_events.tsv",
+        )
+        tasks.append(memory.NumberPair(name="task-numberpair_run-{run + 1}",
+                                       items_list=session_design_filename))
     return tasks
 
 # Task Parameters
@@ -467,17 +468,19 @@ if __name__ == "__main__":
 
     # generate seed
     seed = int(hashlib.sha1(f"{parsed.subject}".encode("utf-8")).hexdigest(), 16) % (2**32 - 1)
-    print("seed", seed)
+    print("seed for design", seed)
     n_condition = len(parsed.reward_level) * len(parsed.target_score_level)
-    n_design_repetition = 1
+    n_design_repetition = 5
     # n_condition * n_condition is the minimum amount of memeory blocks for one valid design
-    n_trials_per_run = n_condition * n_condition * n_design_repetition
+    n_trials = n_condition * n_condition * n_design_repetition
+    n_trials_per_run = 4
 
     # design
     designs = generate_design_file(parsed.target_score_level,
                                    parsed.reward_level,
                                    n_design_repetition,
                                    seed)
+    # save for review
     out_fname = os.path.join(
         NUMBER_PAIRS_DATA_PATH,
         "designs",
@@ -486,11 +489,19 @@ if __name__ == "__main__":
     designs.to_csv(out_fname, sep="\t", index=True)
 
     # event
-    event_file = create_event_file(designs, seed)
-    out_fname = os.path.join(
-        NUMBER_PAIRS_DATA_PATH,
-        "designs",
-        f"sub-{parsed.subject}_event.tsv",
-    )
-    event_file = event_file.reset_index()
-    event_file.to_csv(out_fname, sep="\t", index=True)
+    total_n = designs.shape[0]
+    n_runs = int(total_n / n_trials_per_run)
+    for i in range(n_runs):
+        seed = int(hashlib.sha1(f"{parsed.subject}_{1+i}".encode("utf-8")).hexdigest(), 16) % (2**32 - 1)
+        print(f"seed for design run {1 + i}", seed)
+        start = n_trials_per_run * i
+        end = n_trials_per_run * (i + 1)
+        current_design = designs.iloc[start: end, :].reset_index()
+        event_file = create_event_file(current_design, seed)
+        out_fname = os.path.join(
+            NUMBER_PAIRS_DATA_PATH,
+            "designs",
+            f"sub-{parsed.subject}_task-numberpair_run-{i+1}_events.tsv",
+        )
+        event_file = event_file.reset_index()
+        event_file.to_csv(out_fname, sep="\t", index=True)
