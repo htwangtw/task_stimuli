@@ -1,4 +1,23 @@
 import os
+import re
+import pandas as pd
+import hashlib
+import numpy as np
+from itertools import product
+from scipy.ndimage import label, generate_binary_structure
+
+
+def get_tasks(parsed):
+    from ..tasks import memory
+
+    session_design_filename = os.path.join(
+        NUMBER_PAIRS_DATA_PATH,
+        "designs",
+        f"sub-{parsed.subject}_event.tsv",
+    )
+    tasks = [memory.NumberPair(name="numberpairs",
+                               items_list=session_design_filename)]
+    return tasks
 
 # Task Parameters
 # fMRI: runs of 10 minutes - 2 run max
@@ -29,8 +48,6 @@ GRID_SIZE = (4, 6)
 # how many repetitions of each (target scores x reward level) condition?
 # (should be even if using contiguous task conditions)
 # len(REWARD_LEVEL) * len(TARGET_SCORE_LEVEL) * N_META_BLOCK == number of total trials
-N_META_BLOCK = 4
-N_TRIALS_PER_RUN = len(REWARD_LEVEL) * len(TARGET_SCORE_LEVEL) * N_META_BLOCK
 # how many different grid/task condition sets to generate?
 N_SUBJECTS = 1
 
@@ -42,47 +59,16 @@ ISI = 3  # 3 seconds jittered
 ISI_JITTER = 2
 
 
-def get_tasks(parsed):
-    from ..tasks import memory
-
-    session_design_filename = os.path.join(
-        NUMBER_PAIRS_DATA_PATH,
-        "designs",
-        f"sub-{parsed.subject}_design.tsv",
-    )
-    tasks = [memory.NumberPair(name="numberpairs", items_list=session_design_filename)]
-    return tasks
-
-
-def generate_design_file(subject, target_score_level, reward_level):
-    import hashlib
-    import re
-    from itertools import product
-    import numpy as np
-    import pandas as pd
-    from scipy.ndimage import label, generate_binary_structure
-
-    # sample all ISI with same seed for matching run length
-    np.random.seed(0)
-    isi_set = (
-        np.random.random_sample(N_TRIALS_PER_RUN * 4 + N_META_BLOCK * 2) * ISI_JITTER
-        - ISI_JITTER / 2
-        + ISI
-    )
-
-    isi_set = isi_set.round(2).tolist()
-    print(f"number of uniqune ISI needed for {N_TRIALS_PER_RUN} trials: ", len(isi_set))
+def generate_design_file(target_score_level, reward_level, n_design_repetition, seed):
+    """Generate memory grids based on the target score and reward leve."""
     # seed numpy with subject id and session to have reproducible design generation
-    seed = int(hashlib.sha1(f"{subject}".encode("utf-8")).hexdigest(), 16) % (
-        2**32 - 1
-    )
-    print("seed", seed)
     np.random.seed(seed)
 
     # number of memeory grid to generate
     n_reward = len(reward_level)
     n_target_score = len(target_score_level)
     n_condition = n_reward * n_target_score  # how many different conditions?
+    n_trials_per_run = n_condition * n_condition * n_design_repetition
 
     # generate condion list
     n_samples = 10000
@@ -202,6 +188,7 @@ def generate_design_file(subject, target_score_level, reward_level):
                 sdf = pd.concat([sdf, df])
             sdf = sdf.reset_index(drop=True)
             sdf["reward_level"] = reward_array[s, :]
+            # assign metablock (minimal block size for a run?)
             designs.append(sdf)
         return designs
 
@@ -268,27 +255,9 @@ def generate_design_file(subject, target_score_level, reward_level):
         memory_grid.flat[idx_number_pairs] = np.repeat(range(1, n_pairs + 1), 2)
         return memory_grid
 
-    def _generate_recall_grid(i, row):
-        numbers = list(range(1, row["target_score"] + 1))
-        _ = numbers.pop(i)  # remove the current number testing
-        numbers = "".join([str(n) for n in numbers])
-        pattern = f"[A-Z{numbers}]"
-        # find the location index of the current number
-        recall_grid = re.sub(pattern, r" ", row["grid"])
-        current_number_loc = np.array(
-            [loc for loc, c in enumerate(recall_grid) if c.isdigit()]
-            )
-        np.random.shuffle(current_number_loc)
-        # the first one will be the answer
-        recall_answer = current_number_loc[0]
-        # remove the answer from the grid, replace with empty space
-        recall_grid = f"{recall_grid[:recall_answer]} {recall_grid[recall_answer + 1:]}"
-        return recall_grid,current_number_loc,recall_answer
-
-
     while n_max_condition_difference < N_SUBJECTS:
         max_difference_conditions, max_difference = generate_best_condition(
-            N_TRIALS_PER_RUN, n_condition, n_samples, contiguous=True
+            n_trials_per_run, n_condition, n_samples, contiguous=True
         )
         if (
             len(np.unique(max_difference_conditions, axis=0))
@@ -323,7 +292,52 @@ def generate_design_file(subject, target_score_level, reward_level):
     designs = homogenise_grid_difficulty(
         GRID_SIZE, target_score_array, reward_array, target_score_level
     )
-    designs = designs[0]  # original code was for generating multiple designs
+    designs =  designs[0]  # original code was for generating multiple designs
+    return designs
+
+
+def create_event_file(designs, seed):
+    """Take the design and flash out the event that will be desplayed."""
+    # sample all ISI with same seed for matching run length
+    np.random.seed(0)
+    n_trials_per_run = designs.shape[0]
+    n_isi_needed = 1000  # just generate a bunch
+    isi_set = (
+        np.random.random_sample(n_isi_needed) * ISI_JITTER
+        - ISI_JITTER / 2
+        + ISI
+    )
+    isi_set = isi_set.round(2).tolist()
+    print(f"{n_trials_per_run} events")
+    np.random.seed(seed)
+
+    def _generate_recall_grid(i, row):
+        """Break down the encoding grid into recall events."""
+        numbers = list(range(1, row["target_score"] + 1))
+        _ = numbers.pop(i)  # remove the current number testing
+        numbers = "".join([str(n) for n in numbers])
+        pattern = f"[A-Z{numbers}]"
+        # find the location index of the current number
+        recall_grid = re.sub(pattern, r" ", row["grid"])
+        current_number_loc = np.array(
+            [loc for loc, c in enumerate(recall_grid) if c.isdigit()]
+            )
+        np.random.shuffle(current_number_loc)
+        # the first one will be the answer
+        recall_answer = current_number_loc[0]
+        # remove the answer from the grid, replace with empty space
+        recall_grid = (f"{recall_grid[:recall_answer]} "
+                       f"{recall_grid[recall_answer + 1:]}")
+        return recall_grid,current_number_loc,recall_answer
+
+
+    def _switch_condition(designs, trial, row):
+        """Check if the target score x reward level pair changes next."""
+        if trial == designs.shape[0] - 1:
+            return True
+        next_ts = designs.loc[trial + 1, "target_score"]
+        next_rl = designs.loc[trial + 1, "reward_level"]
+        return (next_rl != row["reward_level"]) or (next_ts != row["target_score"])
 
     event_file = pd.DataFrame()
     for i_encoding, row in designs.iterrows():
@@ -392,7 +406,7 @@ def generate_design_file(subject, target_score_level, reward_level):
             recalls["event_type"].append("effort")
             recalls["recall_display"].append("--")
             recalls["recall_answer"].append("--")
-            recalls["grid"].append("how much effor")
+            recalls["grid"].append("how much effort")
             recalls["pair_number"].append("--")
 
             recalls["duration"].append(isi_set.pop())
@@ -422,24 +436,8 @@ def generate_design_file(subject, target_score_level, reward_level):
         recalls["target_score"] = row["target_score"]
         recalls["reward_level"] = row["reward_level"]
         recalls.index.name = "event_index"
-
         event_file = pd.concat((event_file, recalls))
-    out_fname = os.path.join(
-        NUMBER_PAIRS_DATA_PATH,
-        "designs",
-        f"sub-{subject}_design.tsv",
-    )
-    event_file = event_file.reset_index()
-    event_file.to_csv(out_fname, sep="\t", index=True)
-
-
-def _switch_condition(designs, trial, row):
-    """Check if the target score x reward level pair changes next."""
-    if trial == designs.shape[0] - 1:
-        return True
-    next_ts = designs.loc[trial + 1, "target_score"]
-    next_rl = designs.loc[trial + 1, "reward_level"]
-    return (next_rl != row["reward_level"]) or (next_ts != row["target_score"])
+    return event_file
 
 
 if __name__ == "__main__":
@@ -466,4 +464,33 @@ if __name__ == "__main__":
     )
 
     parsed = parser.parse_args()
-    generate_design_file(parsed.subject, parsed.target_score_level, parsed.reward_level)
+
+    # generate seed
+    seed = int(hashlib.sha1(f"{parsed.subject}".encode("utf-8")).hexdigest(), 16) % (2**32 - 1)
+    print("seed", seed)
+    n_condition = len(parsed.reward_level) * len(parsed.target_score_level)
+    n_design_repetition = 1
+    # n_condition * n_condition is the minimum amount of memeory blocks for one valid design
+    n_trials_per_run = n_condition * n_condition * n_design_repetition
+
+    # design
+    designs = generate_design_file(parsed.target_score_level,
+                                   parsed.reward_level,
+                                   n_design_repetition,
+                                   seed)
+    out_fname = os.path.join(
+        NUMBER_PAIRS_DATA_PATH,
+        "designs",
+        f"sub-{parsed.subject}_design.tsv",
+    )
+    designs.to_csv(out_fname, sep="\t", index=True)
+
+    # event
+    event_file = create_event_file(designs, seed)
+    out_fname = os.path.join(
+        NUMBER_PAIRS_DATA_PATH,
+        "designs",
+        f"sub-{parsed.subject}_event.tsv",
+    )
+    event_file = event_file.reset_index()
+    event_file.to_csv(out_fname, sep="\t", index=True)

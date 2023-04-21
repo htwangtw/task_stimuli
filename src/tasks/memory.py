@@ -16,11 +16,11 @@ STIMULI_SIZE = (400, 400)
 
 quadrant_id_to_pos = [(-200, 100), (200, 100), (-200, -100), (200, -100)]
 
-remap_keys = {
-    "left": "l",
-    "right": "r",
-    "up": "u",
-    "down": "d"
+DIRECTIONS = {
+    "left": -1,
+    "right": 1,
+    "up": -1,
+    "down": 1
 }
 
 class ImagePosition(Task):
@@ -89,12 +89,20 @@ If you can remeber all the pair, you will win the bonus points.
     def __init__(self, items_list, *args, **kwargs):
         super().__init__(**kwargs)
         self.item_list = data.importConditions(items_list)
-        self.duration = len(self.item_list)
+        self.duration = len(self.item_list)  # not sure if this is needed
         self._progress_bar_refresh_rate = 2
         self.trials = data.TrialHandler(self.item_list, 1, method="sequential")
         self.grid_size = (6, 4)
-        self.direction_keys = {'l': -1, 'r': 1, 'u': -1, 'd': 1}
-        self.confidence_keys = {'a': 'yes', 'b': 'no'}
+        self.direction_keys = {"left": "a", "right": "d", "up": "w", "down": "s"}  # laptop
+        self.direction_values = {"a": DIRECTIONS["left"],
+                               "d": DIRECTIONS["right"],
+                               "w": DIRECTIONS["up"],
+                               "s": DIRECTIONS["down"]}  # laptop
+        self.confidence_keys = {'yes': 'k', 'no': 'l'}  # laptop
+        self.rating_pygame = {"left": key.A, "right": key.D}  # laptop
+        # self.confidence_keys = {'yes': 'a', 'no': 'b'}  # mri
+        # self.direction_keys = {"left": "l", "right": "r", "up": "u", "down": "d"}   # mri
+        # self.rating_pygame = {"left": key.L, "right": key.R}  # mri
 
     def _instructions(self, exp_win, ctl_win):
         screen_text = visual.TextStim(
@@ -127,9 +135,9 @@ If you can remeber all the pair, you will win the bonus points.
         ]  # fill the grid from top left corner, left to right first
         recall_instruction = (f"Use the arrow keys to move the selected box."
                               "\nI am sure: press "
-                              f"\"{list(self.confidence_keys.keys())[0]}\" "
+                              f"\"{self.confidence_keys['yes']}\" "
                               "to move on.\nI am not sure: press "
-                              f"\"{list(self.confidence_keys.keys())[1]}\""
+                              f"\"{self.confidence_keys['no']}\""
                               " to move on.")
         self.answer_instruction = visual.TextStim(
             exp_win, text=recall_instruction,
@@ -150,22 +158,21 @@ If you can remeber all the pair, you will win the bonus points.
             exp_win, low=5, high=60, precision=1,
             tickMarks=[5, 60],
             labels=["5 seconds", "60 seconds"], scale=None, noMouse=True,
-            leftKeys='l', rightKeys='r', acceptKeys='a', maxTime=0,
+            leftKeys=self.direction_keys['left'],
+            rightKeys=self.direction_keys['right'],
+            acceptKeys=self.confidence_keys['yes'],
+            maxTime=0,
         )
         self.recall_time.styleTweaks = ['triangleMarker']
-
-        self.estimate_success = visual.RatingScale(
-            exp_win, choices=[0, 1, 2, 3, 4],
-            noMouse=True, precision=1,
-            leftKeys='l', rightKeys='r', acceptKeys='a', maxTime=0,
-        )
-        self.estimate_success.styleTweaks = ['triangleMarker']
 
         self.effort = visual.RatingScale(
             exp_win, low=0, high=100, precision=1,
             tickMarks=[0, 100],
             labels=["0%", "100%"], scale=None, noMouse=True,
-            leftKeys='l', rightKeys='r', acceptKeys='a', maxTime=0,
+            leftKeys=self.direction_keys['left'],
+            rightKeys=self.direction_keys['right'],
+            acceptKeys=self.confidence_keys['yes'],
+            maxTime=0,
         )
         self.recall_time.styleTweaks = ['triangleMarker']
 
@@ -178,9 +185,9 @@ If you can remeber all the pair, you will win the bonus points.
             # flush keys
             last_selected_location = None
             confidence_answer_keys = event.getKeys(
-                        keyList=list(self.confidence_keys.keys()),
+                        keyList=list(self.confidence_keys.values()),
                         timeStamped=self.task_timer)
-            change_direction = event.getKeys(keyList=list(self.direction_keys.keys()))
+            change_direction = event.getKeys(keyList=list(self.direction_keys.values()))
             exp_win.winHandle.push_handlers(self.pyglet_keyboard)
             # display progress
             description = f"Trial {trial['i_grid']}: {trial['event_type']}. {trial['duration']}s"
@@ -196,8 +203,6 @@ If you can remeber all the pair, you will win the bonus points.
                 pos = random.randrange(5, 60)
                 self.recall_time.markerStart = pos
                 grid_memory_time = None
-                # while self.recall_time.noResponse and \
-                #     (self.task_timer.getTime() - trial["onset"]) < trial['duration'] :
                 while self.recall_time.noResponse:
                     # use a sliding scale to select time one wants to use for
                     # memorising the grid
@@ -270,7 +275,7 @@ If you can remeber all the pair, you will win the bonus points.
                         yield True
                         # detect key press for location, update color of selected block
                         last_selected_location = selected_location
-                        change_direction = event.getKeys(keyList=list(self.direction_keys.keys()))
+                        change_direction = event.getKeys(keyList=list(self.direction_keys.values()))
                         if len(change_direction):
                             change_direction_timestamp = self.task_timer.getTime() - trial['onset']
                             selected_location = self._find_next_location(
@@ -303,14 +308,14 @@ If you can remeber all the pair, you will win the bonus points.
                             yield True
 
                         confidence_answer_keys = event.getKeys(
-                            keyList=list(self.confidence_keys.keys()),
+                            keyList=list(self.confidence_keys.values()),
                             timeStamped=self.task_timer)
                         if len(confidence_answer_keys):
                             collect_response = True
                     # detect key press for metacognition answer
                     first_response = confidence_answer_keys[0]
                     recall_correct = int(trial['recall_answer'] == selected_location)
-                    confidence_rating = self.confidence_keys[first_response[0]]
+                    confidence_rating = [k for k, v in self.confidence_keys.items() if v == first_response[0]][0]
                     n_correct += recall_correct
                     self.trials.addData("selected_location", selected_location)
                     self.trials.addData("confidence_key", first_response[0])
@@ -331,11 +336,19 @@ If you can remeber all the pair, you will win the bonus points.
 
             elif trial['event_type'] == "e_success":
                 # update text
-                self.estimate_success.reset()
+                self.estimate_success = visual.RatingScale(
+                    exp_win,
+                    choices=list(range(int(trial['target_score']) + 1)),
+                    noMouse=True, precision=1,
+                    leftKeys='l', rightKeys='r',
+                    acceptKeys=self.confidence_keys['yes'],
+                    maxTime=0,
+                )
+                self.estimate_success.styleTweaks = ['triangleMarker']
                 self.question.text = f"Out of {trial['target_score']} number pairs, how many did you get right?"
                 pos = int(trial['target_score'])
                 self.estimate_success.markerStart = pos
-                self.estimate_success.choices = list(range(int(trial['target_score']) + 1))
+
                 while self.estimate_success.noResponse:
                     self.question.draw(exp_win)
                     self.estimate_success.draw(exp_win)
@@ -407,9 +420,9 @@ If you can remeber all the pair, you will win the bonus points.
             yield True
 
     def _update_rating_scale(self, pos, min, max):
-        if self.pyglet_keyboard[key.L]:
+        if self.pyglet_keyboard[self.rating_pygame['left']]:
             pos -= 1.0
-        elif self.pyglet_keyboard[key.R]:
+        elif self.pyglet_keyboard[self.rating_pygame['right']]:
             pos += 1.0
 
         if pos > max:
@@ -422,12 +435,14 @@ If you can remeber all the pair, you will win the bonus points.
         loc_x, loc_y = self._index2coordinates(selected_location)
         # check what's the max some one has moved in each direction
         for direction in change_direction:
-            if direction in ['l', 'r']:
-                loc_x += self.direction_keys[direction]
+            if direction in [self.direction_keys['left'],
+                             self.direction_keys['right']]:
+                loc_x += self.direction_values[direction]
                 # chek if it's the edge
                 loc_x = self._check_edge(loc_x, "x")
-            elif direction in ['u', 'd']:
-                loc_y += self.direction_keys[direction]
+            elif direction in [self.direction_keys['up'],
+                               self.direction_keys['down']]:
+                loc_y += self.direction_values[direction]
                 # chek if it's the edge
                 loc_y = self._check_edge(loc_y, "y")
             else:
@@ -438,15 +453,16 @@ If you can remeber all the pair, you will win the bonus points.
 
         # if the selected grid is on the display and on the edge, don't move
         # if the selection is on the display and in the middle, skip the cell
-        if direction in ['l', 'r']:
+        if direction in [self.direction_keys['left'],
+                         self.direction_keys['right']]:
             if loc_x in [0, self.grid_size[0] - 1]:  # on the edge
-                loc_x -= self.direction_keys[direction]  # don't move
+                loc_x -= self.direction_values[direction]  # don't move
             else:
-                loc_x += self.direction_keys[direction]  # move past the cell
+                loc_x += self.direction_values[direction]  # move past the cell
         elif loc_y in [0, self.grid_size[-1] - 1]:  # on the edge
-            loc_y -= self.direction_keys[direction] # don't move
+            loc_y -= self.direction_values[direction] # don't move
         else:
-            loc_y += self.direction_keys[direction] # move past the cell
+            loc_y += self.direction_values[direction] # move past the cell
         return self._coordinates2index(loc_x, loc_y)
 
     def _check_edge(self, loc, dir):
