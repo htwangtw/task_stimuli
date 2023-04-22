@@ -7,10 +7,24 @@ from itertools import product
 from scipy.ndimage import label, generate_binary_structure
 
 
+N_DESIGN_REPETITION = 5
+N_GRID_PER_RUN = 4
+
 def get_tasks(parsed):
     from ..tasks import memory
     tasks = []
-    for run in range(20):
+    design_filename = os.path.join(
+            NUMBER_PAIRS_DATA_PATH,
+            "designs",
+            f"sub-{parsed.subject}_design.tsv",
+        )
+    design = pd.read_csv(design_filename, sep='\t')
+    total_n = design.shape[0]
+    n_runs = int(total_n / N_GRID_PER_RUN)
+    for run in range(n_runs):
+        start = N_GRID_PER_RUN * run
+        end = N_GRID_PER_RUN * (run + 1)
+        total_possible_points = design.loc[start:end, ['target_score', 'reward_level']].values.sum()
         session_design_filename = os.path.join(
             NUMBER_PAIRS_DATA_PATH,
             "designs",
@@ -18,7 +32,7 @@ def get_tasks(parsed):
         )
         tasks.append(memory.NumberPair(name="task-numberpair_run-{run + 1}",
                                        items_list=session_design_filename,
-                                       total_possible_points=0))
+                                       total_possible_points=total_possible_points))
     return tasks
 
 # Task Parameters
@@ -302,7 +316,7 @@ def create_event_file(designs, seed):
     """Take the design and flash out the event that will be desplayed."""
     # sample all ISI with same seed for matching run length
     np.random.seed(0)
-    n_trials_per_run = designs.shape[0]
+    n_trials= designs.shape[0]
     n_isi_needed = 1000  # just generate a bunch
     isi_set = (
         np.random.random_sample(n_isi_needed) * ISI_JITTER
@@ -310,7 +324,7 @@ def create_event_file(designs, seed):
         + ISI
     )
     isi_set = isi_set.round(2).tolist()
-    print(f"{n_trials_per_run} events")
+    print(f"{n_trials} events")
     np.random.seed(seed)
 
     def _generate_recall_grid(i, row):
@@ -471,15 +485,13 @@ if __name__ == "__main__":
     seed = int(hashlib.sha1(f"{parsed.subject}".encode("utf-8")).hexdigest(), 16) % (2**32 - 1)
     print("seed for design", seed)
     n_condition = len(parsed.reward_level) * len(parsed.target_score_level)
-    n_design_repetition = 5
-    # n_condition * n_condition is the minimum amount of memeory blocks for one valid design
-    n_trials = n_condition * n_condition * n_design_repetition
-    n_trials_per_run = 4
 
+    # n_condition * n_condition is the minimum amount of memeory blocks for one valid design
+    n_trials = n_condition * n_condition * N_DESIGN_REPETITION
     # design
     designs = generate_design_file(parsed.target_score_level,
                                    parsed.reward_level,
-                                   n_design_repetition,
+                                   N_DESIGN_REPETITION,
                                    seed)
     # save for review
     out_fname = os.path.join(
@@ -491,12 +503,12 @@ if __name__ == "__main__":
 
     # event
     total_n = designs.shape[0]
-    n_runs = int(total_n / n_trials_per_run)
+    n_runs = int(total_n / N_GRID_PER_RUN)
     for i in range(n_runs):
         seed = int(hashlib.sha1(f"{parsed.subject}_{1+i}".encode("utf-8")).hexdigest(), 16) % (2**32 - 1)
         print(f"seed for design run {1 + i}", seed)
-        start = n_trials_per_run * i
-        end = n_trials_per_run * (i + 1)
+        start = N_GRID_PER_RUN * i
+        end = N_GRID_PER_RUN * (i + 1)
         current_design = designs.iloc[start: end, :].reset_index()
         event_file = create_event_file(current_design, seed)
         out_fname = os.path.join(

@@ -88,22 +88,26 @@ If you can remeber all the pair, you will win the bonus points.
 
     def __init__(self, items_list, total_possible_points, *args, **kwargs):
         super().__init__(**kwargs)
-        self.total_possible_points = 0
+        self.total_possible_points = total_possible_points
         self.item_list = data.importConditions(items_list)
         self.duration = len(self.item_list)  # not sure if this is needed
         self._progress_bar_refresh_rate = 2
         self.trials = data.TrialHandler(self.item_list, 1, method="sequential")
         self.grid_size = (6, 4)
-        self.direction_keys = {"left": "a", "right": "d", "up": "w", "down": "s"}  # laptop
-        self.direction_values = {"a": DIRECTIONS["left"],
-                               "d": DIRECTIONS["right"],
-                               "w": DIRECTIONS["up"],
-                               "s": DIRECTIONS["down"]}  # laptop
-        self.confidence_keys = {'yes': 'k', 'no': 'l'}  # laptop
-        self.rating_pygame = {"left": key.A, "right": key.D}  # laptop
-        # self.confidence_keys = {'yes': 'a', 'no': 'b'}  # mri
-        # self.direction_keys = {"left": "l", "right": "r", "up": "u", "down": "d"}   # mri
-        # self.rating_pygame = {"left": key.L, "right": key.R}  # mri
+        # self.direction_keys = {"left": "a", "right": "d", "up": "w", "down": "s"}  # laptop
+        # self.direction_values = {"a": DIRECTIONS["left"],
+        #                         "d": DIRECTIONS["right"],
+        #                         "w": DIRECTIONS["up"],
+        #                         "s": DIRECTIONS["down"]}  # laptop
+        # self.confidence_keys = {'yes': 'k', 'no': 'l'}  # laptop
+        # self.rating_pygame = {"left": key.A, "right": key.D}  # laptop
+        self.confidence_keys = {'yes': 'a', 'no': 'b'}  # mri
+        self.direction_keys = {"left": "l", "right": "r", "up": "u", "down": "d"}   # mri
+        self.direction_values = {"l": DIRECTIONS["left"],
+                                 "r": DIRECTIONS["right"],
+                                 "u": DIRECTIONS["up"],
+                                 "d": DIRECTIONS["down"]}  # laptop
+        self.rating_pygame = {"left": key.L, "right": key.R}  # mri
 
     def _instructions(self, exp_win, ctl_win):
         screen_text = visual.TextStim(
@@ -184,7 +188,17 @@ If you can remeber all the pair, you will win the bonus points.
 
     def _run(self, exp_win, ctl_win):
         # start the trials
-        total_bonus = 0
+        total_earned_points = 0
+        # final results screen
+        self.question.text = (
+            f"In this session, "
+            f"you can earn up to {self.total_possible_points} pionts.")
+        for _ in range(config.FRAME_RATE * 5):
+            self.question.draw(exp_win)
+            if ctl_win:
+                self.question.draw(exp_win)
+            yield True
+
         for trial in self.trials:
             # flush keys
             last_selected_location = None
@@ -373,7 +387,7 @@ If you can remeber all the pair, you will win the bonus points.
             elif trial['event_type'] == "feedback":
                 # update text
                 bonus_point = 0 if n_correct != int(trial["target_score"]) else int(trial["reward_level"])
-                total_bonus += bonus_point + n_correct
+                total_earned_points += bonus_point + n_correct
                 self.question.text = (
                     f"Out of {trial['target_score']} number pairs, "
                     f"you got {n_correct} correctly.\n"
@@ -427,12 +441,12 @@ If you can remeber all the pair, you will win the bonus points.
                 pass
             self.progress_bar.set_description(description)
             yield True
-        # final results screen
-        # update text
 
+        # final results screen
         self.question.text = (
             f"In this session, "
-            f"you earned {total_bonus} out of {self.total_possible_points} pionts.")
+            f"you earned {total_earned_points} out of "
+            f"{self.total_possible_points} pionts.")
         for _ in range(config.FRAME_RATE * 5):
             self.question.draw(exp_win)
             if ctl_win:
